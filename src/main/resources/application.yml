@@ -11,3 +11,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+
+  alphavantage:
+    api:
+      base-url: https://www.alphavantage.co
+      key: ${ALPHA_VANTAGE_API_KEY}
+
+  wallet:
+    scheduling:
+      fixed-delay: 60000
