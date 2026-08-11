@@ -2,8 +2,10 @@ package com.joaocastro.wallet.service;
 
 import com.joaocastro.wallet.client.BrapiClient;
 import com.joaocastro.wallet.model.AssetModel;
-import com.joaocastro.wallet.model.enums.AssetType;
+import com.joaocastro.wallet.model.AssetPriceHistoryModel;
+import com.joaocastro.wallet.repository.AssetPriceHistoryRepository;
 import com.joaocastro.wallet.repository.AssetRepository;
+import com.joaocastro.wallet.service.response.AssetPriceHistoryResponseDto;
 import com.joaocastro.wallet.service.response.AssetResponseDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,7 @@ import java.util.List;
 public class AssetService {
 
     private final AssetRepository assetRepository;
+    private final AssetPriceHistoryRepository assetPriceHistoryRepository;
     private final BrapiClient brapiClient;
 
     @Transactional(readOnly = true)
@@ -42,12 +45,16 @@ public class AssetService {
         AssetModel asset = assetRepository.findBySymbolIgnoreCase(symbol)
                 .orElseThrow(() -> new RuntimeException("Ativo não encontrado com o símbolo: " + symbol));
 
-        // Busca o preço atualizado via Brapi Client
+        // 1. Busca o preço atualizado via Brapi Client
         BigDecimal updatedPrice = brapiClient.fetchCurrentPrice(asset.getSymbol());
+        LocalDateTime now = LocalDateTime.now();
 
-        // Atualiza a entidade no banco de dados
+        // 2. Atualiza a entidade principal
         asset.setCurrentPrice(updatedPrice);
-        asset.setLastPriceUpdate(LocalDateTime.now());
+        asset.setLastPriceUpdate(now);
+
+        // 3. Salva a foto do preço no Histórico
+        savePriceHistory(asset, updatedPrice, now);
 
         return AssetResponseDto.fromEntity(asset);
     }
@@ -55,13 +62,20 @@ public class AssetService {
     @Transactional
     public void updateAllActiveAssetsPrices() {
         List<AssetModel> activeAssets = assetRepository.findByActiveTrue();
+
         for (AssetModel asset : activeAssets) {
             try {
                 BigDecimal updatedPrice = brapiClient.fetchCurrentPrice(asset.getSymbol());
-                asset.setCurrentPrice(updatedPrice);
-                asset.setLastPriceUpdate(LocalDateTime.now());
+                LocalDateTime now = LocalDateTime.now();
 
-                // Pequeno delay de 200ms entre as chamadas apenas para boa prática
+                // Atualiza a cotação no ativo
+                asset.setCurrentPrice(updatedPrice);
+                asset.setLastPriceUpdate(now);
+
+                // Grava o histórico
+                savePriceHistory(asset, updatedPrice, now);
+
+                // Pequeno delay preventivo entre chamadas HTTP
                 Thread.sleep(200);
             } catch (Exception e) {
                 log.error("Erro ao atualizar {}: {}", asset.getSymbol(), e.getMessage());
@@ -69,4 +83,29 @@ public class AssetService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<AssetPriceHistoryResponseDto> findHistoryBySymbol(String symbol) {
+        // Valida se o ativo existe antes de buscar o histórico
+        if (!assetRepository.existsBySymbolIgnoreCase(symbol)) {
+            throw new RuntimeException("Ativo não encontrado com o símbolo: " + symbol);
+        }
+
+        // Retorna a lista de históricos (se estiver vazio, retorna [] sem dar erro)
+        return assetPriceHistoryRepository.findByAssetSymbolIgnoreCaseOrderByRecordedAtDesc(symbol)
+                .stream()
+                .map(AssetPriceHistoryResponseDto::fromEntity)
+                .toList();
+    }
+
+    /**
+     * Método auxiliar privado para encapsular a criação e salvamento do registro de histórico.
+     */
+    private void savePriceHistory(AssetModel asset, BigDecimal price, LocalDateTime recordedAt) {
+        AssetPriceHistoryModel history = new AssetPriceHistoryModel();
+        history.setAsset(asset);
+        history.setPrice(price);
+        history.setRecordedAt(recordedAt);
+
+        assetPriceHistoryRepository.save(history);
+    }
 }

@@ -1,6 +1,7 @@
 package com.joaocastro.wallet.controller;
 
 import com.joaocastro.wallet.service.AssetService;
+import com.joaocastro.wallet.service.response.AssetPriceHistoryResponseDto;
 import com.joaocastro.wallet.service.response.AssetResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -45,5 +46,11 @@ public class AssetController {
     public ResponseEntity<Void> updateAllPrices() {
         assetService.updateAllActiveAssetsPrices();
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{symbol}/history")
+    public ResponseEntity<List<AssetPriceHistoryResponseDto>> findHistoryBySymbol(@PathVariable String symbol) {
+        List<AssetPriceHistoryResponseDto> history = assetService.findHistoryBySymbol(symbol);
+        return ResponseEntity.ok(history);
     }
 }
