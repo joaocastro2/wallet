@@ -12,10 +12,10 @@ spring:
     hibernate:
       ddl-auto: validate
 
-  alphavantage:
+  brapi:
     api:
-      base-url: https://www.alphavantage.co
-      key: ${ALPHA_VANTAGE_API_KEY}
+      base-url: https://brapi.dev/api
+      token: ${BRAPI_API_TOKEN}
 
   wallet:
     scheduling:

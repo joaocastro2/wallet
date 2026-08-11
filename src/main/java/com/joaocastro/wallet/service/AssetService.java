@@ -1,11 +1,12 @@
 package com.joaocastro.wallet.service;
 
-import com.joaocastro.wallet.client.AlphaVantageClient;
+import com.joaocastro.wallet.client.BrapiClient;
 import com.joaocastro.wallet.model.AssetModel;
 import com.joaocastro.wallet.model.enums.AssetType;
 import com.joaocastro.wallet.repository.AssetRepository;
 import com.joaocastro.wallet.service.response.AssetResponseDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,12 +14,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AssetService {
 
     private final AssetRepository assetRepository;
-    private final AlphaVantageClient alphaVantageClient;
+    private final BrapiClient brapiClient;
 
     @Transactional(readOnly = true)
     public List<AssetResponseDto> findAllActive() {
@@ -40,11 +42,8 @@ public class AssetService {
         AssetModel asset = assetRepository.findBySymbolIgnoreCase(symbol)
                 .orElseThrow(() -> new RuntimeException("Ativo não encontrado com o símbolo: " + symbol));
 
-        // Verifica se o tipo do ativo é CRYPTO (Ajuste caso o nome do seu Enum de cripto seja diferente)
-        boolean isCrypto = asset.getType() == AssetType.CRYPTO;
-
-        // Busca o preço atualizado via API externa passando a flag isCrypto
-        BigDecimal updatedPrice = alphaVantageClient.fetchCurrentPrice(asset.getSymbol(), isCrypto);
+        // Busca o preço atualizado via Brapi Client
+        BigDecimal updatedPrice = brapiClient.fetchCurrentPrice(asset.getSymbol());
 
         // Atualiza a entidade no banco de dados
         asset.setCurrentPrice(updatedPrice);
@@ -58,17 +57,16 @@ public class AssetService {
         List<AssetModel> activeAssets = assetRepository.findByActiveTrue();
         for (AssetModel asset : activeAssets) {
             try {
-                boolean isCrypto = asset.getType() == AssetType.CRYPTO;
-
-                BigDecimal updatedPrice = alphaVantageClient.fetchCurrentPrice(asset.getSymbol(), isCrypto);
+                BigDecimal updatedPrice = brapiClient.fetchCurrentPrice(asset.getSymbol());
                 asset.setCurrentPrice(updatedPrice);
                 asset.setLastPriceUpdate(LocalDateTime.now());
 
-                // Delay de 1.2s para evitar estourar o Rate Limit de requisições por minuto da Alpha Vantage
-                Thread.sleep(12000);
+                // Pequeno delay de 200ms entre as chamadas apenas para boa prática
+                Thread.sleep(200);
             } catch (Exception e) {
-                System.err.println("Erro ao atualizar " + asset.getSymbol() + ": " + e.getMessage());
+                log.error("Erro ao atualizar {}: {}", asset.getSymbol(), e.getMessage());
             }
         }
     }
+
 }
