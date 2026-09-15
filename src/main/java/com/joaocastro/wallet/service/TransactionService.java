@@ -35,12 +35,18 @@ public class TransactionService {
     public TransactionResponseDto buy(TransactionRequestDto dto) {
         AssetModel asset = findAssetBySymbol(dto.symbol());
 
+        BigDecimal marketPrice = asset.getCurrentPrice();
+
+        if (marketPrice == null || marketPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("O ativo " + asset.getSymbol() + " não possui cotação válida de mercado.");
+        }
+
         // 1. Registra a Transação de Compra
         TransactionModel transaction = TransactionModel.builder()
                 .asset(asset)
                 .type(TransactionType.BUY)
                 .quantity(dto.quantity())
-                .unitPrice(dto.unitPrice())
+                .unitPrice(marketPrice)
                 .build();
 
         TransactionModel savedTransaction = transactionRepository.save(transaction);
@@ -57,7 +63,7 @@ public class TransactionService {
         BigDecimal currentAvgPrice = position.getAveragePrice();
 
         BigDecimal newQty = dto.quantity();
-        BigDecimal buyPrice = dto.unitPrice();
+        BigDecimal buyPrice = marketPrice;
 
         // Fórmula do Preço Médio Ponderado:
         // Novo PM = ((Qtd Atual * PM Atual) + (Qtd Nova * Preço Novo)) / (Qtd Total)
@@ -85,6 +91,11 @@ public class TransactionService {
     @Transactional
     public TransactionResponseDto sell(TransactionRequestDto dto) {
         AssetModel asset = findAssetBySymbol(dto.symbol());
+        BigDecimal marketPrice = asset.getCurrentPrice();
+
+        if (marketPrice == null || marketPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalStateException("O ativo " + asset.getSymbol() + " não possui uma cotação de mercado válida para venda.");
+        }
 
         // 1. Valida se o usuário possui posição aberta para este ativo
         WalletPositionModel position = walletPositionRepository.findByAssetId(asset.getId())
@@ -103,7 +114,7 @@ public class TransactionService {
                 .asset(asset)
                 .type(TransactionType.SELL)
                 .quantity(dto.quantity())
-                .unitPrice(dto.unitPrice())
+                .unitPrice(marketPrice)
                 .build();
 
         TransactionModel savedTransaction = transactionRepository.save(transaction);
@@ -120,7 +131,7 @@ public class TransactionService {
 
         walletPositionRepository.save(position);
 
-        log.info("Venda efetuada: {}x {} a R$ {}. Saldo restante: {}", dto.quantity(), asset.getSymbol(), dto.unitPrice(), remainingQty);
+        log.info("Venda efetuada: {}x {} a R$ {}. Saldo restante: {}", dto.quantity(), asset.getSymbol(), marketPrice, remainingQty);
 
         return TransactionResponseDto.fromEntity(savedTransaction);
     }
