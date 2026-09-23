@@ -1,5 +1,7 @@
 package com.joaocastro.wallet.service;
 
+import com.joaocastro.wallet.event.TransactionCreatedEvent;
+import com.joaocastro.wallet.kafka.producer.EventProducer;
 import com.joaocastro.wallet.model.AssetModel;
 import com.joaocastro.wallet.model.TransactionModel;
 import com.joaocastro.wallet.model.WalletPositionModel;
@@ -27,6 +29,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WalletPositionRepository walletPositionRepository;
     private final AssetRepository assetRepository;
+    private final EventProducer eventProducer;
 
     /**
      * Registra uma ordem de COMPRA, atualizando a quantidade acumulada e o Preço Médio.
@@ -51,36 +54,20 @@ public class TransactionService {
 
         TransactionModel savedTransaction = transactionRepository.save(transaction);
 
-        // 2. Atualiza ou cria a Posição na Carteira com o novo Preço Médio
-        WalletPositionModel position = walletPositionRepository.findByAssetId(asset.getId())
-                .orElseGet(() -> WalletPositionModel.builder()
-                        .asset(asset)
-                        .quantity(BigDecimal.ZERO)
-                        .averagePrice(BigDecimal.ZERO)
-                        .build());
+        // 2. Publica o evento no Kafka
+        TransactionCreatedEvent event = new TransactionCreatedEvent(
+                savedTransaction.getId(),
+                savedTransaction.getAsset().getSymbol(),
+                savedTransaction.getType(),
+                savedTransaction.getQuantity(),
+                savedTransaction.getUnitPrice(),
+                savedTransaction.getTotalValue(),
+                savedTransaction.getCreatedAt()
+        );
 
-        BigDecimal currentQty = position.getQuantity();
-        BigDecimal currentAvgPrice = position.getAveragePrice();
+        eventProducer.sendTransactionCreatedEvent(event);
 
-        BigDecimal newQty = dto.quantity();
-        BigDecimal buyPrice = marketPrice;
-
-        // Fórmula do Preço Médio Ponderado:
-        // Novo PM = ((Qtd Atual * PM Atual) + (Qtd Nova * Preço Novo)) / (Qtd Total)
-        BigDecimal totalCurrentCost = currentQty.multiply(currentAvgPrice);
-        BigDecimal totalNewCost = newQty.multiply(buyPrice);
-        BigDecimal totalQty = currentQty.add(newQty);
-
-        BigDecimal newAveragePrice = totalCurrentCost.add(totalNewCost)
-                .divide(totalQty, 4, RoundingMode.HALF_UP);
-
-        position.setQuantity(totalQty);
-        position.setAveragePrice(newAveragePrice);
-        position.setUpdatedAt(LocalDateTime.now());
-
-        walletPositionRepository.save(position);
-
-        log.info("Compra efetuada: {}x {} a R$ {}. Novo PM: R$ {}", newQty, asset.getSymbol(), buyPrice, newAveragePrice);
+        log.info("Compra efetuada e evento publicado no Kafka: {}x {} a R$", dto.quantity(), asset.getSymbol(), marketPrice);
 
         return TransactionResponseDto.fromEntity(savedTransaction);
     }
