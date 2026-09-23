@@ -1,6 +1,8 @@
 package com.joaocastro.wallet.service;
 
 import com.joaocastro.wallet.client.BrapiClient;
+import com.joaocastro.wallet.event.AssetPriceUpdatedEvent;
+import com.joaocastro.wallet.kafka.producer.EventProducer;
 import com.joaocastro.wallet.model.AssetModel;
 import com.joaocastro.wallet.model.AssetPriceHistoryModel;
 import com.joaocastro.wallet.repository.AssetPriceHistoryRepository;
@@ -24,6 +26,7 @@ public class AssetService {
     private final AssetRepository assetRepository;
     private final AssetPriceHistoryRepository assetPriceHistoryRepository;
     private final BrapiClient brapiClient;
+    private final EventProducer eventProducer;
 
     @Transactional(readOnly = true)
     public List<AssetResponseDto> findAllActive() {
@@ -56,6 +59,16 @@ public class AssetService {
         // 3. Salva a foto do preço no Histórico
         savePriceHistory(asset, updatedPrice, now);
 
+        // 4. Cria e envia o evento para o Kafka (Antes do return)
+        AssetPriceUpdatedEvent event = new AssetPriceUpdatedEvent(
+                asset.getSymbol(),
+                updatedPrice,
+                now
+        );
+
+        eventProducer.sendAssetPriceUpdatedEvent(event);
+
+        // 5. Retorna a resposta HTTP
         return AssetResponseDto.fromEntity(asset);
     }
 
