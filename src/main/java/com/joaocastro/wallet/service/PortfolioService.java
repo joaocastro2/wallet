@@ -1,16 +1,21 @@
 package com.joaocastro.wallet.service;
 
+import com.joaocastro.wallet.event.TransactionCreatedEvent;
 import com.joaocastro.wallet.model.AssetModel;
 import com.joaocastro.wallet.model.WalletPositionModel;
+import com.joaocastro.wallet.model.enums.TransactionType;
+import com.joaocastro.wallet.repository.AssetRepository;
 import com.joaocastro.wallet.repository.WalletPositionRepository;
 import com.joaocastro.wallet.service.response.WalletItemResponseDto;
 import com.joaocastro.wallet.service.response.WalletSumaryResponseDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,6 +25,7 @@ import java.util.List;
 public class PortfolioService {
 
     private final WalletPositionRepository walletPositionRepository;
+    private final AssetRepository assetRepository;
 
     public WalletSumaryResponseDto getPortfolioSumary(){
         List<WalletPositionModel> positions = walletPositionRepository.findAll();
@@ -85,6 +91,53 @@ public class PortfolioService {
                 grandTotalReturnPercentage,
                 items
         );
+    }
+
+    @Transactional
+    public void processTransactionEvent(TransactionCreatedEvent event) {
+        log.info("Processando evento de transacao via Kafka para o ativo: {}", event.assetSymbol());
+
+        AssetModel asset = assetRepository.findBySymbolIgnoreCase(event.assetSymbol())
+                .orElseThrow(() -> new IllegalArgumentException("Ativo nao encontrado: " + event.assetSymbol()));
+
+        WalletPositionModel position = walletPositionRepository.findByAssetId(asset.getId())
+                .orElseGet(() -> WalletPositionModel.builder()
+                        .asset(asset)
+                        .quantity(BigDecimal.ZERO)
+                        .averagePrice(BigDecimal.ZERO)
+                        .build());
+
+        if (event.type() == TransactionType.BUY) {
+            // Lógica do Preço Médio Ponderado (PMP)
+            BigDecimal currentQty = position.getQuantity();
+            BigDecimal currentAvgPrice = position.getAveragePrice();
+            BigDecimal newQty = event.quantity();
+            BigDecimal buyPrice = event.unitPrice();
+
+            BigDecimal totalCurrentCost = currentQty.multiply(currentAvgPrice);
+            BigDecimal totalNewCost = newQty.multiply(buyPrice);
+            BigDecimal totalQty = currentQty.add(newQty);
+
+            BigDecimal newAveragePrice = totalCurrentCost.add(totalNewCost)
+                    .divide(totalQty, 4, RoundingMode.HALF_UP);
+
+            position.setQuantity(totalQty);
+            position.setAveragePrice(newAveragePrice);
+
+        } else if (event.type() == TransactionType.SELL) {
+            // Abate quantidade mantendo o mesmo Preço Médio
+            BigDecimal newQty = position.getQuantity().subtract(event.quantity());
+            position.setQuantity(newQty);
+
+            if (newQty.compareTo(BigDecimal.ZERO) == 0) {
+                position.setAveragePrice(BigDecimal.ZERO);
+            }
+        }
+
+        position.setUpdatedAt(LocalDateTime.now());
+        walletPositionRepository.save(position);
+
+        log.info("Carteira atualizada com sucesso via Kafka para o ativo: {}", event.assetSymbol());
     }
 
 }
