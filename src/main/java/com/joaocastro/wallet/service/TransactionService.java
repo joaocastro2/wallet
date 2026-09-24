@@ -76,27 +76,24 @@ public class TransactionService {
      * Registra uma ordem de VENDA após validar se há saldo suficiente na carteira.
      */
     @Transactional
-    public TransactionResponseDto sell(TransactionRequestDto dto) {
-        AssetModel asset = findAssetBySymbol(dto.symbol());
+    public TransactionResponseDto createSellTransaction(TransactionRequestDto dto) {
+        log.info("Iniciando processo de VENDA para o ativo: {}", dto.symbol());
+
+        // 1. Validações e busca das entidades primárias
+        AssetModel asset = assetRepository.findBySymbolIgnoreCase(dto.symbol())
+                .orElseThrow(() -> new IllegalArgumentException("Ativo nao encontrado: " + dto.symbol()));
+
         BigDecimal marketPrice = asset.getCurrentPrice();
 
-        if (marketPrice == null || marketPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalStateException("O ativo " + asset.getSymbol() + " não possui uma cotação de mercado válida para venda.");
-        }
-
-        // 1. Valida se o usuário possui posição aberta para este ativo
+        // (Opcional) Validação rápida se o usuário possui quantidade suficiente para vender
         WalletPositionModel position = walletPositionRepository.findByAssetId(asset.getId())
-                .orElseThrow(() -> new IllegalArgumentException("Você não possui posição aberta do ativo: " + dto.symbol()));
+                .orElseThrow(() -> new IllegalArgumentException("Voce nao possui este ativo na carteira."));
 
-        // 2. Validação de Saldo Insuficiente para Venda
         if (position.getQuantity().compareTo(dto.quantity()) < 0) {
-            throw new IllegalArgumentException(
-                    String.format("Saldo insuficiente para venda de %s. Saldo atual: %s, Tentativa de venda: %s",
-                            asset.getSymbol(), position.getQuantity(), dto.quantity())
-            );
+            throw new IllegalArgumentException("Saldo insuficiente de ativos para realizar a venda.");
         }
 
-        // 3. Registra a Transação de Venda
+        // 2. Cria e salva o registro histórico da transação
         TransactionModel transaction = TransactionModel.builder()
                 .asset(asset)
                 .type(TransactionType.SELL)
@@ -106,20 +103,23 @@ public class TransactionService {
 
         TransactionModel savedTransaction = transactionRepository.save(transaction);
 
-        // 4. Abate a quantidade vendida na Posição (O Preço Médio Permanece Inalterado)
-        BigDecimal remainingQty = position.getQuantity().subtract(dto.quantity());
-        position.setQuantity(remainingQty);
-        position.setUpdatedAt(LocalDateTime.now());
+        // 3. Monta o evento para publicação no Kafka
+        TransactionCreatedEvent event = new TransactionCreatedEvent(
+                savedTransaction.getId(),
+                savedTransaction.getAsset().getSymbol(),
+                savedTransaction.getType(),
+                savedTransaction.getQuantity(),
+                savedTransaction.getUnitPrice(),
+                savedTransaction.getTotalValue(),
+                savedTransaction.getCreatedAt()
+        );
 
-        // Se zerou a quantidade mantida do ativo, zera o preço médio também
-        if (remainingQty.compareTo(BigDecimal.ZERO) == 0) {
-            position.setAveragePrice(BigDecimal.ZERO);
-        }
+        // 4. Dispara o evento de forma assíncrona
+        eventProducer.sendTransactionCreatedEvent(event);
 
-        walletPositionRepository.save(position);
+        log.info("Venda registrada com sucesso. Evento publicado para a transacao ID: {}", savedTransaction.getId());
 
-        log.info("Venda efetuada: {}x {} a R$ {}. Saldo restante: {}", dto.quantity(), asset.getSymbol(), marketPrice, remainingQty);
-
+        // 5. Retorna o DTO de resposta do endpoint sem esperar a atualização da carteira
         return TransactionResponseDto.fromEntity(savedTransaction);
     }
 
