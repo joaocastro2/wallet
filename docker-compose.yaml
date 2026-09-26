@@ -11,6 +11,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  auth_db:
+    image: postgres:17
+    container_name: wallet-aut-db
+    environment:
+      POSTGRES_DB: wallet_auth_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+
   Zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: wallet-zookeeper
@@ -50,3 +62,4 @@ services:
 
 volumes:
   postgres_data:
+  auth_db_data:
