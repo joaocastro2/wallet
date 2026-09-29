@@ -1,0 +1,19 @@
+package com.joaocastro.wallet.service.request;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
+import java.math.BigDecimal;
+
+public record TransactionRequestDto(
+
+        @NotBlank(message = "O símbolo do ativo é obrigatório")
+        String symbol,
+
+        @NotNull(message = "A quantidade é obrigatória")
+        @Positive(message = "A quantidade deve ser maior que zero")
+        BigDecimal quantity
+
+) {
+}
