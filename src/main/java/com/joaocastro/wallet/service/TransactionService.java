@@ -76,7 +76,7 @@ public class TransactionService {
      * Registra uma ordem de VENDA após validar se há saldo suficiente na carteira.
      */
     @Transactional
-    public TransactionResponseDto createSellTransaction(TransactionRequestDto dto) {
+    public TransactionResponseDto sell(TransactionRequestDto dto) {
         log.info("Iniciando processo de VENDA para o ativo: {}", dto.symbol());
 
         // 1. Validações e busca das entidades primárias
