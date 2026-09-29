@@ -13,7 +13,7 @@ services:
 
   auth_db:
     image: postgres:17
-    container_name: wallet-aut-db
+    container_name: wallet-auth-db
     environment:
       POSTGRES_DB: wallet_auth_db
       POSTGRES_USER: ${POSTGRES_USER}
