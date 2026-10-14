@@ -20,3 +20,4 @@ public class UserConsumer {
         portfolioService.processUserCreatedEvent(event);
     }
 }
+//test
