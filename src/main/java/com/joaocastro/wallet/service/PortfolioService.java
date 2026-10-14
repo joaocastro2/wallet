@@ -1,6 +1,7 @@
 package com.joaocastro.wallet.service;
 
 import com.joaocastro.wallet.event.TransactionCreatedEvent;
+import com.joaocastro.wallet.event.UserCreatedEvent;
 import com.joaocastro.wallet.model.AssetModel;
 import com.joaocastro.wallet.model.WalletPositionModel;
 import com.joaocastro.wallet.model.enums.TransactionType;
@@ -138,6 +139,15 @@ public class PortfolioService {
         walletPositionRepository.save(position);
 
         log.info("Carteira atualizada com sucesso via Kafka para o ativo: {}", event.assetSymbol());
+    }
+
+    @Transactional
+    public void processUserCreatedEvent(UserCreatedEvent event) {
+        log.info("Novo usuario recebido via Kafka no PortfolioService: ID={}, Email={}",
+                event.userId(), event.userMail());
+
+        // Se você possui uma entidade de Carteira ou se deseja apenas registrar a inicialização:
+        // Exemplo: logar a prontidão do usuário ou criar registro inicial de saldo/posição zerada se aplicável.
     }
 
 }
