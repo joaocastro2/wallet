@@ -20,6 +20,9 @@ public class WalletPositionModel {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "user_id", nullable = false)
+    private UUID userId;
+
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "asset_id", nullable = false, unique = true)
     private AssetModel asset;
