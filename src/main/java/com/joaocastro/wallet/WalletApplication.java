@@ -13,5 +13,3 @@ public class WalletApplication {
 	}
 
 }
-
-//git test 4
