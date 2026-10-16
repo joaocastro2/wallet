@@ -4,6 +4,7 @@ import com.joaocastro.wallet.model.WalletPositionModel;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,5 +13,8 @@ public interface WalletPositionRepository extends JpaRepository <WalletPositionM
 
     Optional<WalletPositionModel> findByAssetSymbolIgnoreCase(String symbol);
     Optional<WalletPositionModel> findByAssetId(UUID assetId);
+
+    Optional<WalletPositionModel> findByUserIdAndAssetId(UUID userId, UUID assetId);
+    List<WalletPositionModel> findByUserId(UUID userId);
 
 }
