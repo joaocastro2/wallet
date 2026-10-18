@@ -10,6 +10,8 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - wallet-network
 
   auth_db:
     image: postgres:17
@@ -22,8 +24,10 @@ services:
       - "5433:5432"
     volumes:
       - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - wallet-network
 
-  Zookeeper:
+  zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: wallet-zookeeper
     environment:
@@ -31,6 +35,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - wallet-network
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -39,27 +45,101 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
     depends_on:
-      - Zookeeper
+      - zookeeper
     ports:
       - "9092:9092"
+      - "9094:9094"
+    networks:
+      - wallet-network
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: wallet-kafka-ui
     environment:
       KAFKA_CLUSTERS_0_NAME: local-cluster
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
     ports:
       - "8081:8080"
     depends_on:
       - kafka
+    networks:
+      - wallet-network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: wallet-mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - wallet-network
+
+  wallet-service:
+    build:
+      context: .
+    container_name: wallet-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wallet_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAPI_API_TOKEN: ${BRAPI_API_TOKEN}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - wallet-network
+
+  portfolio-service:
+    build:
+      context: .
+    container_name: wallet-portfolio-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wallet_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BRAPI_API_TOKEN: ${BRAPI_API_TOKEN}
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - wallet-network
+
+  notification-service:
+    build:
+      context: ./notification-service
+    container_name: wallet-notification-service
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SPRING_MAIL_HOST: mailpit
+      MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      MAIL_PORT: 1025
+    ports:
+      - "8083:8083"
+    depends_on:
+      - kafka
+      - mailpit
+    networks:
+      - wallet-network
 
 volumes:
   postgres_data:
   auth_db_data:
+
+networks:
+  wallet-network:
+    driver: bridge
